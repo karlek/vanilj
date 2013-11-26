@@ -6,7 +6,7 @@ import (
 	"image"
 	"math/cmplx"
 
-	"github.com/karlek/42/fractal"
+	"github.com/karlek/vanilj/fractal"
 )
 
 // Divergence returns the number of iterations it takes for a complex point to

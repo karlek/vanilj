@@ -1,4 +1,4 @@
-// 42 is a program to create mandelbrot images.
+// Vanilj is a program to create mandelbrot images.
 package main
 
 import (
@@ -7,8 +7,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/karlek/42/canvas"
-	"github.com/karlek/42/fractal/mandel"
+	"github.com/karlek/vanilj/canvas"
+	"github.com/karlek/vanilj/fractal/mandel"
 	"github.com/mewkiz/pkg/errutil"
 )
 
