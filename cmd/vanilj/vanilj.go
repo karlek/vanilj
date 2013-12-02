@@ -1,4 +1,4 @@
-// Vanilj is a program to create mandelbrot images.
+// Vanilj is a mandelbrot explorer.
 package main
 
 import (
@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/karlek/vanilj/canvas"
+	// "github.com/karlek/vanilj/fractal"
 	"github.com/karlek/vanilj/fractal/mandel"
 	"github.com/mewkiz/pkg/errutil"
 )
@@ -50,7 +51,11 @@ func renderMandelbrot() (err error) {
 	flag.Parse()
 
 	c := canvas.NewCanvas(width, height)
-	mandel.Draw(c.RGBA, zoom, iterations, complex(centerReal, centerImag))
+
+	// mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.NewRandomGradient(iterations))
+	// mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.NewPrettyGradient(iterations))
+	// mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.PedagogicalGradient)
+	mandel.DrawSmooth(c.RGBA, zoom, complex(centerReal, centerImag), iterations)
 
 	err = c.Save(filename)
 	if err != nil {

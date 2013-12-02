@@ -19,33 +19,31 @@ var (
 	}
 )
 
-func NewRandomGradient() Gradient {
+func NewRandomGradient(iterations int) Gradient {
 	r := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
-	g := Gradient{
-		color.RGBA{uint8(r.Intn(255)), uint8(r.Intn(255)), uint8(r.Intn(255)), 0xff},
-		color.RGBA{uint8(r.Intn(255)), uint8(r.Intn(255)), uint8(r.Intn(255)), 0xff},
-		color.RGBA{uint8(r.Intn(255)), uint8(r.Intn(255)), uint8(r.Intn(255)), 0xff},
-		color.RGBA{uint8(r.Intn(255)), uint8(r.Intn(255)), uint8(r.Intn(255)), 0xff},
-		color.RGBA{uint8(r.Intn(255)), uint8(r.Intn(255)), uint8(r.Intn(255)), 0xff},
+	g := make(Gradient, iterations)
+	for n := range g {
+		g[n] = color.RGBA{uint8(r.Intn(255)), uint8(r.Intn(255)), uint8(r.Intn(255)), 0xff}
+	}
+	return g
+
+}
+
+func NewPrettyGradient(iterations int) Gradient {
+	g := make(Gradient, iterations)
+	var col color.Color
+	for n := range g {
+		val := uint8(float64(n) / float64(iterations) * 255)
+		if n < (iterations / 2) {
+			col = color.RGBA{val * 2, 0x00, val * 2, 0xff}
+		} else {
+			col = color.RGBA{val, val, val, 0xff}
+		}
+		g[n] = col
 	}
 	return g
 }
 
-func (g Gradient) DivergenceToColor(escapedIn, iterations int) color.Color {
-	// If escapedIn is equal to the number of iterations it can be considered a
-	// member of the fractal set.
-	switch {
-	case (escapedIn == iterations):
-		return g[0]
-	case (escapedIn%4 == 0):
-		return g[1]
-	case (escapedIn%3 == 0):
-		return g[2]
-	case (escapedIn%2 == 0):
-		return g[3]
-	case (escapedIn%2 == 1):
-		return g[4]
-	default:
-		return g[0]
-	}
+func (g Gradient) DivergenceToColor(escapedIn int) color.Color {
+	return g[escapedIn%len(g)]
 }
