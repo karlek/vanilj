@@ -19,9 +19,9 @@ var (
 	}
 )
 
-func NewRandomGradient(iterations int) Gradient {
+func NewRandomGradient(iterations float64) Gradient {
 	r := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
-	g := make(Gradient, iterations)
+	g := make(Gradient, int64(iterations))
 	for n := range g {
 		g[n] = color.RGBA{uint8(r.Intn(255)), uint8(r.Intn(255)), uint8(r.Intn(255)), 0xff}
 	}
@@ -29,12 +29,12 @@ func NewRandomGradient(iterations int) Gradient {
 
 }
 
-func NewPrettyGradient(iterations int) Gradient {
-	g := make(Gradient, iterations)
+func NewPrettyGradient(iterations float64) Gradient {
+	g := make(Gradient, int64(iterations))
 	var col color.Color
 	for n := range g {
 		val := uint8(float64(n) / float64(iterations) * 255)
-		if n < (iterations / 2) {
+		if int64(n) < int64(iterations/2) {
 			col = color.RGBA{val * 2, 0x00, val * 2, 0xff}
 		} else {
 			col = color.RGBA{val, val, val, 0xff}

@@ -40,7 +40,7 @@ Smooth uses the "Normalized Iteration Count Algorithm" which removes the bands o
 
 All images were created with:
 ```shell
-$ vanilj -cr 1.5018 -z 1600000 -i 800
+$ vanilj -cr -1.5018 -z 10000 -i 800
 ```
 
 API documentation
