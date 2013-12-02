@@ -16,8 +16,8 @@ import (
 var (
 	filename   string
 	width      int
-	iterations int
 	height     int
+	iterations float64
 	zoom       float64
 	centerReal float64
 	centerImag float64
@@ -29,7 +29,7 @@ func init() {
 	flag.StringVar(&filename, "o", "fractal.png", "output filename.")
 	flag.IntVar(&width, "width", 1920, "image width.")
 	flag.IntVar(&height, "height", 1080, "image height.")
-	flag.IntVar(&iterations, "i", 100, "number of iterations.")
+	flag.Float64Var(&iterations, "i", 100, "number of iterations.")
 	flag.Float64Var(&zoom, "z", 250, "zoom level.")
 	flag.Float64Var(&centerReal, "cr", 0, "real value of center offset.")
 	flag.Float64Var(&centerImag, "ci", 0, "imaginary value of center offset.")

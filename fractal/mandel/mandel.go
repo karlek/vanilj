@@ -14,9 +14,9 @@ import (
 
 // divergence returns the number of iterations it takes for a complex point to
 // leave the mandelbrot set.
-func divergence(c complex128, iterations int) int {
+func divergence(c complex128, iterations float64) float64 {
 	z := complex(0, 0)
-	for i := 0; i < iterations; i++ {
+	for i := 0.0; i < iterations; i++ {
 		z = z*z + c
 		if cmplx.Abs(z) > 2 {
 			return i
@@ -27,9 +27,9 @@ func divergence(c complex128, iterations int) int {
 
 // divergencePrim returns the number of iterations it takes for a complex point
 // to leave the mandelbrot set and also returns the last point.
-func divergencePrim(c complex128, iterations int) (int, complex128) {
+func divergencePrim(c complex128, iterations float64) (float64, complex128) {
 	z := complex(0, 0)
-	for i := 0; i < iterations; i++ {
+	for i := 0.0; i < iterations; i++ {
 		z = z*z + c
 		if cmplx.Abs(z) > 2 {
 			return i, z
@@ -45,11 +45,14 @@ func isMemberOfSet(z complex128) bool {
 }
 
 // Draw draws the mandelbrot fractal to an image.
-func Draw(rgba *image.RGBA, zoom float64, center complex128, iterations int, gradient fractal.Gradient) {
-	size := rgba.Bounds().Size()
-	for x := 0; x < size.X; x++ {
-		for y := 0; y < size.Y; y++ {
-			p := complex(float64(size.X/2-x)/zoom-real(center), float64(size.Y/2-y)/zoom+imag(center))
+func Draw(rgba *image.RGBA, zoom float64, center complex128, iterations float64, gradient fractal.Gradient) {
+	w, h := float64(rgba.Bounds().Size().X), float64(rgba.Bounds().Size().Y)
+	for x := 0.0; x < w; x++ {
+		for y := 0.0; y < h; y++ {
+			ratio := w / h
+			pr := ratio * (x - w/2.0) / (0.2 * zoom * w)
+			pi := (y - h/2.0) / (0.2 * zoom * h)
+			p := complex(pr, pi) + center
 
 			// Don't draw the points outside the Mandelbrot set.
 			if !isMemberOfSet(p) {
@@ -58,17 +61,20 @@ func Draw(rgba *image.RGBA, zoom float64, center complex128, iterations int, gra
 
 			// Get the speed of divergence.
 			mVal := divergence(p, iterations)
-			rgba.Set(x, y, gradient.DivergenceToColor(mVal))
+			rgba.Set(int(x), int(y), gradient.DivergenceToColor(int(mVal)))
 		}
 	}
 }
 
 // DrawSmooth draws the mandelbrot fractal to an image with smooth coloring.
-func DrawSmooth(rgba *image.RGBA, zoom float64, center complex128, iterations int) {
-	size := rgba.Bounds().Size()
-	for x := 0; x < size.X; x++ {
-		for y := 0; y < size.Y; y++ {
-			p := complex(float64(size.X/2-x)/zoom-real(center), float64(size.Y/2-y)/zoom+imag(center))
+func DrawSmooth(rgba *image.RGBA, zoom float64, center complex128, iterations float64) {
+	w, h := float64(rgba.Bounds().Size().X), float64(rgba.Bounds().Size().Y)
+	for y := 0.0; y < h; y++ {
+		for x := 0.0; x < w; x++ {
+			ratio := w / h
+			pr := ratio * (x - w/2.0) / (0.2 * zoom * w)
+			pi := (y - h/2.0) / (0.2 * zoom * h)
+			p := complex(pr, pi) + center
 
 			// Don't draw the points outside the Mandelbrot set.
 			if !isMemberOfSet(p) {
@@ -77,12 +83,12 @@ func DrawSmooth(rgba *image.RGBA, zoom float64, center complex128, iterations in
 
 			// Get the speed of divergence.
 			mVal, z := divergencePrim(p, iterations)
-			nsmooth := (float64(mVal) + float64(1) - math.Log(math.Log(cmplx.Abs(z)))/math.Log(1.5)) / float64(iterations)
-			rgba.Set(x, y, smoothColor(nsmooth, mVal))
+			nsmooth := (float64(mVal) + float64(1) - math.Log(math.Log(cmplx.Abs(z)))/math.Log(2)) / iterations
+			rgba.Set(int(x), int(y), smoothColor(nsmooth))
 		}
 	}
 }
 
-func smoothColor(val float64, mVal int) color.Color {
+func smoothColor(val float64) color.Color {
 	return colorful.Hsv(val*360, 1, 1)
 }
