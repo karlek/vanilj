@@ -30,7 +30,7 @@ func init() {
 	flag.IntVar(&width, "width", 1920, "image width.")
 	flag.IntVar(&height, "height", 1080, "image height.")
 	flag.Float64Var(&iterations, "i", 100, "number of iterations.")
-	flag.Float64Var(&zoom, "z", 250, "zoom level.")
+	flag.Float64Var(&zoom, "z", 1, "zoom level.")
 	flag.Float64Var(&centerReal, "cr", 0, "real value of center offset.")
 	flag.Float64Var(&centerImag, "ci", 0, "imaginary value of center offset.")
 }
