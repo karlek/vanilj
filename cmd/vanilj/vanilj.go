@@ -8,19 +8,20 @@ import (
 	"os"
 
 	"github.com/karlek/vanilj/canvas"
-	// "github.com/karlek/vanilj/fractal"
+	"github.com/karlek/vanilj/fractal"
 	"github.com/karlek/vanilj/fractal/mandel"
 	"github.com/mewkiz/pkg/errutil"
 )
 
 var (
-	filename   string
-	width      int
-	height     int
-	iterations float64
-	zoom       float64
-	centerReal float64
-	centerImag float64
+	filename   	string
+	colorScheme	string
+	width      	int
+	height     	int
+	iterations 	float64
+	zoom       	float64
+	centerReal 	float64
+	centerImag 	float64
 )
 
 func init() {
@@ -33,6 +34,7 @@ func init() {
 	flag.Float64Var(&zoom, "z", 1, "zoom level.")
 	flag.Float64Var(&centerReal, "cr", 0, "real value of center offset.")
 	flag.Float64Var(&centerImag, "ci", 0, "imaginary value of center offset.")
+	flag.StringVar(&colorScheme, "t", "smooth", "color scheme")
 }
 
 func usage() {
@@ -52,10 +54,16 @@ func renderMandelbrot() (err error) {
 
 	c := canvas.NewCanvas(width, height)
 
-	// mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.NewRandomGradient(iterations))
-	// mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.NewPrettyGradient(iterations))
-	// mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.PedagogicalGradient)
-	mandel.DrawSmooth(c.RGBA, zoom, complex(centerReal, centerImag), iterations)
+	switch colorScheme {
+	case "smooth":
+		mandel.DrawSmooth(c.RGBA, zoom, complex(centerReal, centerImag), iterations)
+	case "random":
+		mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.NewRandomGradient(iterations))
+	case "pretty":
+		mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.NewPrettyGradient(iterations))
+	case "pedagogical":
+		mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.PedagogicalGradient)
+	}
 
 	err = c.Save(filename)
 	if err != nil {
