@@ -18,7 +18,7 @@ func divergence(c complex128, iterations float64) float64 {
 	z := complex(0, 0)
 	for i := 0.0; i < iterations; i++ {
 		z = z*z + c
-		if cmplx.Abs(z) > 2 {
+		if !isMemberOfSet(z) {
 			return i
 		}
 	}
@@ -26,12 +26,12 @@ func divergence(c complex128, iterations float64) float64 {
 }
 
 // divergencePrim returns the number of iterations it takes for a complex point
-// to leave the mandelbrot set and also returns the last point.
+// to leave the mandelbrot set and also returns the point last point (which could be outside the mandelbrot set).
 func divergencePrim(c complex128, iterations float64) (float64, complex128) {
 	z := complex(0, 0)
 	for i := 0.0; i < iterations; i++ {
 		z = z*z + c
-		if cmplx.Abs(z) > 2 {
+		if !isMemberOfSet(z) {
 			return i, z
 		}
 	}
@@ -48,10 +48,23 @@ func isMemberOfSet(z complex128) bool {
 func Draw(rgba *image.RGBA, zoom float64, center complex128, iterations float64, gradient fractal.Gradient) {
 	w, h := float64(rgba.Bounds().Size().X), float64(rgba.Bounds().Size().Y)
 	for x := 0.0; x < w; x++ {
-		for y := 0.0; y < h; y++ {
+		for y := 0.0; y < h; y++ {				
+			// We multiply the real value with the ratio since we divide by the boundary values (width and height).
+			// Division is equal to zoom. Since 'w' is 'ratio' times bigger than 'h'. If we didn't multiply, the image wouldn't zoom equally on the x- and y-axis rendering
+			// strange images.
 			ratio := w / h
+			
+			// (x-w/2.0) is used to make the x-axis (and also the origo) run through the middle of the screen, horizontally.
+			// (0.2 * zoom * w) is used to make the zoom proportional to the width of the image.
+			// However since we want to zoom on the x-/y-axis equally we need to make the real value proportional to the imaginary value.
+			// Because 'w' is 'ratio' times bigger than 'h' we multiply the real value with ratio.
+			// Now the values are proportional.
 			pr := ratio * (x - w/2.0) / (0.2 * zoom * w)
+			
+			// (y - h/2.0) is used to make the y-axis run through the middle of the screen, vertically.
 			pi := (y - h/2.0) / (0.2 * zoom * h)
+			
+			// Center is the complex point were we will zoom in on the mandelbrot. 
 			p := complex(pr, pi) + center
 
 			// Don't draw the points outside the Mandelbrot set.
@@ -89,6 +102,8 @@ func DrawSmooth(rgba *image.RGBA, zoom float64, center complex128, iterations fl
 	}
 }
 
+/// Add credit.
+// smoothColor returns a color from the smooth color formula.
 func smoothColor(val float64) color.Color {
 	return colorful.Hsv(val*360, 1, 1)
 }
