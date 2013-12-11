@@ -20,25 +20,26 @@ Generate an image
 $ vanilj -z 500 -cr 1.5018 -ci 1 -i 200 -t random -width 500 -height 300 -o "1.png"
 ```
 
-Flags
+Flags:
+------
 
-	cr:
-		Real value offset from origio to zoom in on.
-	ci:
-		Imaginary value offset from origio to zoom in on.
-	i:
-		Number of iterations performed.
-	t:
-		Which color scheme to use, valid options are ["random", "pretty", "smooth", "pedagogical"].
-	z:
-		Zoom value. How many magnifications to make on the center point.
-	o:
-		Output filename.
-	width:
-		Width of created image.
-	height:
-		Height of created image.
-	
+* __cr:__
+	Real value offset from origio to zoom in on.
+* __ci:__
+	Imaginary value offset from origio to zoom in on.
+* __i:__
+	Number of iterations performed.
+* __t:__
+	Which color scheme to use, valid options are ["random", "pretty", "smooth", "pedagogical"].
+* __z:__
+	Zoom value. How many magnifications to make on the center point.
+* __o:__
+	Output filename.
+* __width:__
+	Width of created image.
+* __height:__
+	Height of created image.
+
 Examples
 --------
 
