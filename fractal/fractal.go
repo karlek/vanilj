@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Gradient is a list of colors.
 type Gradient []color.Color
 
 var (
@@ -19,6 +20,7 @@ var (
 	}
 )
 
+// NewRandomGradient creates a gradient of colors proportional to the number of iterations.
 func NewRandomGradient(iterations float64) Gradient {
 	r := rand.New(rand.NewSource(int64(time.Now().Nanosecond())))
 	g := make(Gradient, int64(iterations))
@@ -29,6 +31,7 @@ func NewRandomGradient(iterations float64) Gradient {
 
 }
 
+// NewPrettyGradient creates a gradient of colors fading between purple and white. The smoothness is proportional to the number of iterations
 func NewPrettyGradient(iterations float64) Gradient {
 	g := make(Gradient, int64(iterations))
 	var col color.Color
@@ -44,6 +47,7 @@ func NewPrettyGradient(iterations float64) Gradient {
 	return g
 }
 
+// DivergenceToColor returns a color depending on the number of iterations it took for the fractal to escape the fractal set.
 func (g Gradient) DivergenceToColor(escapedIn int) color.Color {
 	return g[escapedIn%len(g)]
 }
