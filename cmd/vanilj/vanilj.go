@@ -63,6 +63,8 @@ func renderMandelbrot() (err error) {
 		mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.NewPrettyGradient(iterations))
 	case "pedagogical":
 		mandel.Draw(c.RGBA, zoom, complex(centerReal, centerImag), iterations, fractal.PedagogicalGradient)
+	default:
+		log.Fatalln(errutil.Newf("undefined color scheme: %s", colorScheme))
 	}
 
 	err = c.Save(filename)
