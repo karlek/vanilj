@@ -5,7 +5,7 @@ subject to change. The documentation can be inaccurate.
 
 Vanilj
 ======
-Vanilj is a mandelbrot image generator. It's name is a reference to "vanilla
+Vanilj is a mandelbrot explorer written in go. It's name is a reference to "vanilla
 dreams" which is an awesome Swedish cookie.
 
 Installation
@@ -15,10 +15,30 @@ Installation
 
 Generate an image
 -----------------
+
 ```shell
-$ vanilj -z 500 -cr 1 -width 500 -height 300 -o "1.png"
+$ vanilj -z 500 -cr 1.5018 -ci 1 -i 200 -t random -width 500 -height 300 -o "1.png"
 ```
 
+Flags
+
+	cr:
+		Real value offset from origio to zoom in on.
+	ci:
+		Imaginary value offset from origio to zoom in on.
+	i:
+		Number of iterations performed.
+	t:
+		Which color scheme to use, valid options are ["random", "pretty", "smooth", "pedagogical"].
+	z:
+		Zoom value. How many magnifications to make on the center point.
+	o:
+		Output filename.
+	width:
+		Width of created image.
+	height:
+		Height of created image.
+	
 Examples
 --------
 
@@ -40,7 +60,7 @@ Smooth uses the "Normalized Iteration Count Algorithm" which removes the bands o
 
 All images were created with:
 ```shell
-$ vanilj -cr -1.5018 -z 10000 -i 800
+$ vanilj -cr -1.5018 -z 1000 -i 800
 ```
 
 API documentation
