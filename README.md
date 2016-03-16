@@ -8,6 +8,15 @@ Vanilj
 Vanilj is a mandelbrot explorer written in go. It's name is a reference to "vanilla
 dreams" which is an awesome Swedish cookie.
 
+Inspiration
+-----------
+
+[sub.blue](http://sub.blue/fractal-lab)
+
+[sub.blue old blog](http://2008.sub.blue/blog.html)
+
+[orbit traps](http://www.fractaldomains.com/tutorial/use-orbit-traps/)
+
 Installation
 ------------
 
