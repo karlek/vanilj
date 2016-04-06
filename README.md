@@ -5,8 +5,7 @@ subject to change. The documentation can be inaccurate.
 
 Vanilj
 ======
-Vanilj is a mandelbrot explorer written in go. It's name is a reference to "vanilla
-dreams" which is an awesome Swedish cookie.
+Vanilj is a mandelbrot explorer written in go. It's name is a reference to "vanilla dreams" which is an awesome Swedish cookie.
 
 Inspiration
 -----------
