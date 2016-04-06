@@ -21,13 +21,7 @@ func (c *Canvas) Save(filename string) (err error) {
 		return errutil.Err(err)
 	}
 	defer f.Close()
-
-	err = png.Encode(f, c)
-	if err != nil {
-		return errutil.Err(err)
-	}
-
-	return nil
+	return png.Encode(f, c)
 }
 
 // NewCanvas initalizes a new canvas with the dimensions supplied on function
