@@ -2,10 +2,18 @@
 package fractal
 
 import (
+	"image"
 	"image/color"
 	"math/rand"
 	"time"
 )
+
+type Fractal struct {
+	Src    *image.RGBA
+	Iter   float64
+	Center complex128
+	Zoom   float64
+}
 
 // Gradient is a list of colors.
 type Gradient []color.Color
