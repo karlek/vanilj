@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/png"
+	"io"
 	"log"
 	"math"
 	"math/rand"
@@ -15,25 +17,24 @@ import (
 	"time"
 
 	"github.com/0xC3/progress/barcli"
+	"github.com/Sirupsen/logrus"
 	"github.com/disintegration/imaging"
 	"github.com/dustin/randbo"
 	"github.com/karlek/profile"
-	"github.com/karlek/verbose"
 )
 
 var (
-	w          = 2000
-	h          = 2000
-	offset     = 0.6 + 0i
-	zoom       = float64(w) / 2.8
-	iterations = 20000
+	w      = 512
+	h      = 512
+	offset = 0.0 + 0i
+	// offset     = 0.6 + 0i
+	// zoom       = float64(w) / 2.8
+	zoom       = float64(w) / 5
+	iterations = 200
 	filename   = "a.png"
 )
 
-var random = randbo.NewFrom(rand.NewSource(time.Now().UnixNano()))
-
 func main() {
-	verbose.Verbose = true
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	err := play()
@@ -42,50 +43,156 @@ func main() {
 	}
 }
 
-func initalize() (img *image.NRGBA, visited [][]int) {
+func initialize() (img *image.NRGBA, v *Visit) {
 	// Output image with black background.
 	img = image.NewNRGBA(image.Rect(0, 0, w, h))
 	black := color.RGBA{0, 0, 0, 255}
 	draw.Draw(img, img.Bounds(), &image.Uniform{black}, image.ZP, draw.Src)
 
-	visited = make([][]int, h)
-	for y := range visited {
-		visited[y] = make([]int, w)
+	v = new(Visit)
+	v.m = make([][]int, h)
+	for y := range v.m {
+		v.m[y] = make([]int, w)
 	}
-	return img, visited
+	return img, v
 }
 
 func play() (err error) {
 	defer profile.Start(profile.CPUProfile).Stop()
 
-	verbose.Println("[.]    Initializing.")
-	img, visited := initalize()
+	logrus.Println("[.]    Initializing.")
+	img, visited := initialize()
 
-	verbose.Println("[-]    Calculating visited points.")
+	logrus.Println("[-]    Calculating visited points.")
 	b, err := barcli.New(100)
 	if err != nil {
 		return err
 	}
 	for i := 0; i < 100; i++ {
-		for j := 0; j < 5000000; j++ {
+		for j := 0; j < 500000; j++ {
 			rpoint(visited)
 		}
 		err = b.Inc()
 		if err != nil {
-			log.Println(err)
+			logrus.Println(err)
 		}
 		err = b.Print()
 		if err != nil {
-			log.Println(err)
+			logrus.Println(err)
 		}
 	}
-	verbose.Println("[/]    Creating image.")
+	logrus.Println("[/]    Creating image.")
 	plot(img, visited)
 	return save(img)
 }
 
-func rpoint(visited [][]int) {
-	c := complex(sign()*2*randfloat(), sign()*2*randfloat())
+type WorkRequest struct {
+	Name  string
+	Delay time.Duration
+}
+
+// NewWorker creates, and returns a new Worker object. Its only argument
+// is a channel that the worker can add itself to whenever it is done its
+// work.
+func NewWorker(id int, workerQueue chan chan WorkRequest) Worker {
+	// Create, and return the worker.
+	worker := Worker{
+		ID:          id,
+		Work:        make(chan WorkRequest),
+		WorkerQueue: workerQueue,
+		QuitChan:    make(chan bool)}
+
+	return worker
+}
+
+type Worker struct {
+	ID          int
+	Work        chan WorkRequest
+	WorkerQueue chan chan WorkRequest
+	QuitChan    chan bool
+}
+
+// This function "starts" the worker by starting a goroutine, that is
+// an infinite "for-select" loop.
+func (w Worker) Start() {
+	go func() {
+		for {
+			// Add ourselves into the worker queue.
+			w.WorkerQueue <- w.Work
+
+			select {
+			case work := <-w.Work:
+				// Receive a work request.
+				fmt.Printf("worker%d: Received work request, delaying for %f seconds\n", w.ID, work.Delay.Seconds())
+
+				time.Sleep(work.Delay)
+				fmt.Printf("worker%d: Hello, %s!\n", w.ID, work.Name)
+
+			case <-w.QuitChan:
+				// We have been asked to stop.
+				fmt.Printf("worker%d stopping\n", w.ID)
+				return
+			}
+		}
+	}()
+}
+
+// Stop tells the worker to stop listening for work requests.
+//
+// Note that the worker will only stop *after* it has finished its work.
+func (w Worker) Stop() {
+	go func() {
+		w.QuitChan <- true
+	}()
+}
+
+func rpointprim() {
+	name := "asdf"
+	delay := time.Second * 1
+	// Now, we take the delay, and the person's name, and make a WorkRequest out of them.
+	work := WorkRequest{Name: name, Delay: delay}
+
+	// Push the work onto the queue.
+	WorkQueue <- work
+	fmt.Println("Work request queued")
+}
+
+var WorkerQueue chan chan WorkRequest
+
+func StartDispatcher(nworkers int) {
+	// First, initialize the channel we are going to but the workers' work channels into.
+	WorkerQueue = make(chan chan WorkRequest, nworkers)
+
+	// Now, create all of our workers.
+	for i := 0; i < nworkers; i++ {
+		fmt.Println("Starting worker", i+1)
+		worker := NewWorker(i+1, WorkerQueue)
+		worker.Start()
+	}
+
+	go func() {
+		for {
+			select {
+			case work := <-WorkQueue:
+				fmt.Println("Received work requeust")
+				go func() {
+					worker := <-WorkerQueue
+
+					fmt.Println("Dispatching work request")
+					worker <- work
+				}()
+			}
+		}
+	}()
+}
+
+// A buffered channel that we can send work requests on.
+var WorkQueue = make(chan WorkRequest, 100)
+
+var random = randbo.NewFrom(rand.NewSource(time.Now().UnixNano()))
+
+func rpoint(v *Visit) {
+	c := complex(sign(random)*2*rand.Float64(), sign(random)*2*rand.Float64())
 	// Converges.
 	points := divergencePrim(c)
 	if points == nil {
@@ -97,13 +204,24 @@ func rpoint(visited [][]int) {
 		if p.X >= w || p.Y >= h || p.X < 0 || p.Y < 0 {
 			continue
 		}
-		visited[p.Y][p.X]++
+		v.Inc(p.X, p.Y)
 	}
+}
+
+type Visit struct {
+	m [][]int
+	sync.Mutex
+}
+
+func (v *Visit) Inc(x, y int) {
+	v.Lock()
+	v.m[y][x]++
+	v.Unlock()
 }
 
 var p = make([]byte, 1)
 
-func sign() float64 {
+func sign(random io.Reader) float64 {
 	random.Read(p)
 	r := int(p[0] % 2)
 	if r == 1 {
@@ -114,15 +232,15 @@ func sign() float64 {
 
 var p1 = make([]byte, 4)
 
-func randfloat() float64 {
+func randfloat(random io.Reader) float64 {
 	random.Read(p1)
 	b0, b1, b2, b3 := float64(p1[0]), float64(p1[1]), float64(p1[2]), float64(p1[3])
 	return (1 / 256.0) * (b0 + (1/256.0)*(b1+(1/256.0)*(b2+(1/256.0)*b3)))
 }
 
-func plot(img *image.NRGBA, visited [][]int) {
+func plot(img *image.NRGBA, visited *Visit) {
 	max, min := -1, math.MaxInt64
-	for _, row := range visited {
+	for _, row := range visited.m {
 		for _, v := range row {
 			if v > max {
 				max = v
@@ -138,7 +256,7 @@ func plot(img *image.NRGBA, visited [][]int) {
 	} else {
 		scale = 255.0 / float64(max)
 	}
-	for y, row := range visited {
+	for y, row := range visited.m {
 		for x, v := range row {
 			plotPoint(PlotPoint{p: image.Pt(x, y), v: float64(v), scale: scale}, img)
 		}
@@ -171,7 +289,7 @@ func save(img *image.NRGBA) (err error) {
 
 	img = imaging.Rotate270(img)
 
-	verbose.Println("[!]    Done:", filename)
+	logrus.Println("[!]    Done:", filename)
 	return png.Encode(out, img)
 }
 
