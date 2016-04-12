@@ -27,7 +27,7 @@ import (
 var (
 	// Color scaling.
 	overexposure = 1.0
-	factor       = 50.0
+	factor       = 10.0
 	f            = exp
 	// File options.
 	filename = "a.jpg"
@@ -38,7 +38,7 @@ var (
 const (
 	w          = 4096
 	h          = 4096
-	iterations = 100000
+	iterations = 10000000
 	bailout    = 4
 	step       = 0.001
 	tries      = 10000000
@@ -48,42 +48,43 @@ const (
 )
 
 func itoc(r, g, b *Visit, incChan chan hit) {
-	for h := range incChan {
-		if h.it < 9000 {
+	for hi := range incChan {
+		if hi.it < 10000 {
 			continue
 		}
-		p := h.p
-		// logrus.Println(math.Pi/4, math.Sin(float64(h.it)))
-		// a := math.Sin(float64(h.it))
-		// if a >= 0 && a <= math.Phi/4 {
-		// 	r[p.X][p.Y]++
-		// }
-		// if a >= 0 && a <= math.Phi/6 && a >= math.Phi/9 {
-		// 	g[p.X][p.Y]++
-		// }
-		// if a >= 0 && a <= math.Phi/10 {
-		// 	b[p.X][p.Y]++
-		// }
-		if h.it >= 1000 && h.it <= 11000 {
-			r[p.X][p.Y]++
-		} else if h.it >= 10000 && h.it <= 52000 {
-			g[p.X][p.Y]++
-		} else if h.it >= 50000 && h.it < 92000 {
-			b[p.X][p.Y]++
+		p := hi.p
+		switch {
+		case hi.it%3 == 0 && hi.it >= 10000 && hi.it <= 30000:
+			r[p.X+p.Y*h]++
+		case hi.it%5 == 0 && hi.it >= 30000 && hi.it <= 300000:
+			g[p.X+p.Y*h]++
+		case hi.it%7 == 0 && hi.it >= 300000:
+			b[p.X+p.Y*h]++
 		}
 	}
 }
 
-type Visit [w][h]float64
+var fun string
+
+type Visit [w * h]float64
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
-	var fun string
 	flag.BoolVar(&load, "load", false, "use pre-computed values.")
 	flag.BoolVar(&rotate, "r", false, "rotate the fractal to an upright position.")
 	flag.Float64Var(&overexposure, "o", 3.0, "over exposure")
-	flag.Float64Var(&factor, "f", 50.0, "factor")
+	flag.Float64Var(&factor, "f", 10.0, "factor")
 	flag.StringVar(&fun, "fun", "exp", "color scaling function")
+	flag.Usage = usage
+}
+
+func usage() {
+	fmt.Fprintf(os.Stderr, "%s [OPTIONS],,,", os.Args[0])
+}
+
+func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	flag.Parse()
 	switch fun {
 	case "exp":
 		f = exp
@@ -96,16 +97,7 @@ func init() {
 	default:
 		logrus.Fatalln("invalid color scaling function:", fun)
 	}
-	flag.Usage = usage
-}
 
-func usage() {
-	fmt.Fprintf(os.Stderr, "%s [OPTIONS],,,", os.Args[0])
-}
-
-func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	flag.Parse()
 	if err := play(); err != nil {
 		logrus.Fatalln(err)
 	}
@@ -133,7 +125,7 @@ func play() (err error) {
 	}
 
 	logrus.Println("[-] Calculating visited points.")
-	incChan := make(chan hit, 20000)
+	incChan := make(chan hit, 100)
 	go itoc(r, g, b, incChan)
 	// ordered(r, g, b, incChan)
 	arbitrary(r, g, b, incChan)
@@ -257,11 +249,9 @@ type hit struct {
 
 func max(v *Visit) (max float64) {
 	max = -1
-	for _, row := range v {
-		for _, v := range row {
-			if v > max {
-				max = v
-			}
+	for _, v := range v {
+		if v > max {
+			max = v
 		}
 	}
 	return max
@@ -271,21 +261,31 @@ func GetFunctionName(i interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
+func twodim(n float64) (int, int) {
+	y := math.Floor(n / 4096)
+	x := n - y*4096
+	return int(x), int(y)
+}
+
 func plot(img *image.RGBA, r, g, b *Visit) {
 	rMax := max(r)
 	gMax := max(g)
 	bMax := max(b)
 	logrus.Println("[i] Visitations:", rMax, gMax, bMax)
 	logrus.Printf("[i] Function: %s, factor: %.2f, overexposure: %.2f", GetFunctionName(f), factor, overexposure)
-	for x, col := range r {
-		for y := range col {
-			c := color.RGBA{
-				uint8(value(r[x][y], rMax)),
-				uint8(value(g[x][y], gMax)),
-				uint8(value(b[x][y], bMax)),
-				255}
-			img.Set(x, y, c)
+	for _, n := range r {
+		x, y := twodim(n)
+		if r[x+y*h] == 0 &&
+			g[x+y*h] == 0 &&
+			b[x+y*h] == 0 {
+			continue
 		}
+		c := color.RGBA{
+			uint8(value(r[x+y*h], rMax)),
+			uint8(value(g[x+y*h], gMax)),
+			uint8(value(b[x+y*h], bMax)),
+			255}
+		img.Set(x, y, c)
 	}
 }
 
