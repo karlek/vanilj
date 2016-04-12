@@ -1,153 +1,290 @@
 package main
 
 import (
+	"encoding/gob"
+	"flag"
+	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
 	"image/jpeg"
-	"io"
-	"log"
 	"math"
 	"math/rand"
+	"reflect"
+	"time"
 
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/disintegration/imaging"
 	"github.com/dustin/randbo"
 	"github.com/karlek/profile"
+	"github.com/karlek/progress/barcli"
+)
+
+// Color scaling.
+var (
+	overexposure = 2.0
+	factor       = 50.0
+	f            = log
 )
 
 const (
-	w = 1024
-	h = 1024
+	w          = 4096
+	h          = 4096
+	iterations = 1000000
+	bailout    = 4
+	step       = 0.001
+	tries      = 100000
 )
 
 var (
-	offset     = 0.4 + 0i
-	zoom       = float64(w) / 2.8
-	iterations = 200
-	filename   = "a.jpeg"
-	step       = 0.001
+	// Camera options.
+	offset = 0.4 + 0i
+	zoom   = float64(w) / 2.8
+	// File options.
+	load     = false
+	filename = "a.jpg"
+	rotate   = false
 )
 
-type Visit [w][h]int
-
-func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-
-	err := play()
-	if err != nil {
-		log.Fatalln(err)
+func itoc(r, g, b *Visit, incChan chan hit) {
+	for h := range incChan {
+		p := h.p
+		if h.it >= 10000 && h.it <= 11000 {
+			r[p.X][p.Y]++
+		} else if h.it >= 50000 && h.it <= 52000 {
+			g[p.X][p.Y]++
+		} else if h.it >= 90000 && h.it < 92000 {
+			b[p.X][p.Y]++
+		}
 	}
 }
 
-func initialize() (img *image.NRGBA, v *Visit) {
-	// Output image with black background.
-	img = image.NewNRGBA(image.Rect(0, 0, w, h))
-	black := color.RGBA{0, 0, 0, 255}
-	draw.Draw(img, img.Bounds(), &image.Uniform{black}, image.ZP, draw.Src)
+type Visit [w][h]float64
 
-	return img, &Visit{}
+func init() {
+	flag.BoolVar(&load, "load", false, "use pre-computed values.")
+	flag.Usage = usage
+}
+
+func usage() {
+	fmt.Fprintf(os.Stderr, "%s [OPTIONS],,,", os.Args[0])
+}
+
+func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	flag.Parse()
+	if err := play(); err != nil {
+		logrus.Fatalln(err)
+	}
+}
+
+func initialize() (img *image.RGBA, r, g, b *Visit) {
+	// Output image with black background.
+	return image.NewRGBA(image.Rect(0, 0, w, h)), &Visit{}, &Visit{}, &Visit{}
 }
 
 func play() (err error) {
 	defer profile.Start(profile.CPUProfile).Stop()
 
-	logrus.Println("[.]    Initializing.")
-	img, visited := initialize()
+	logrus.Println("[.] Initializing.")
+	img, r, g, b := initialize()
 
-	logrus.Println("[-]    Calculating visited points.")
-	// b, err := barcli.New(100)
-	// if err != nil {
-	// 	return err
-	// }
-	ordered(visited)
-	// for i := 0; i < 100; i++ {
-	// 	for j := 0; j < 500000; j++ {
-	// 		rpoint(visited)
-	// 	}
-	// 	err = b.Inc()
-	// 	if err != nil {
-	// 		logrus.Println(err)
-	// 	}
-	// 	err = b.Print()
-	// 	if err != nil {
-	// 		logrus.Println(err)
-	// 	}
-	// }
-	logrus.Println("[/]    Creating image.")
-	plot(img, visited)
+	if load {
+		logrus.Println("[-] Loading visits.")
+		r, g, b, err = loadVisits()
+		if err != nil {
+			return err
+		}
+		pixelChan := make(chan pixel, 4000)
+		go render(img, pixelChan)
+		plot(pixelChan, r, g, b)
+		close(pixelChan)
+		return save(img)
+	}
+
+	logrus.Println("[-] Calculating visited points.")
+	incChan := make(chan hit, 4000)
+	go itoc(r, g, b, incChan)
+	ordered(r, g, b, incChan)
+	arbitrary(r, g, b, incChan)
+	close(incChan)
+	logrus.Println("[i] Saving r, g, b channels")
+	if err := gobVisits(r, g, b); err != nil {
+		return err
+	}
+
+	logrus.Println("[/] Creating image.")
+	pixelChan := make(chan pixel, 4000)
+	go render(img, pixelChan)
+	plot(pixelChan, r, g, b)
+	close(pixelChan)
 	return save(img)
 }
 
-func ordered(v *Visit) {
-	incChan := make(chan image.Point, 20)
-	go func(v *Visit, incChan chan image.Point) {
-		for p := range incChan {
-			if p.X >= w || p.Y >= h || p.X < 0 || p.Y < 0 {
-				continue
-			}
-			v[p.Y][p.X]++
-		}
-	}(v, incChan)
-
-	// wg := new(sync.WaitGroup)
-	// wg.Add(int(4*(1.0/step) + 1))
-
-	for x := -2.0; x <= 2; x += step {
-		// go func(x float64, incChan chan image.Point, wg *sync.WaitGroup) {
-		for y := -2.0; y <= 2; y += step {
-			divergencePrim(complex(x, y), incChan)
-		}
-		// wg.Done()
-		// }(x, incChan, wg)
+func render(img *image.RGBA, pixelChan chan pixel) {
+	for p := range pixelChan {
+		img.Set(p.p.X, p.p.Y, p.c)
 	}
-
-	// wg.Wait()
-	close(incChan)
 }
 
-// func point(c complex128, incChan chan image.Point) {
-// 	for _, z := range divergencePrim(c) {
-// 		p := ptoi(z)
-// 		// Ignore points outside image.
-// 		if p.X >= w || p.Y >= h || p.X < 0 || p.Y < 0 {
-// 			continue
-// 		}
-// 		incChan <- p
-// 	}
-// }
+func gobVisits(r, g, b *Visit) (err error) {
+	file, err := os.Create("r-g-b.gob")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	enc := gob.NewEncoder(file)
+	err = enc.Encode(r)
+	if err != nil {
+		return err
+	}
+	err = enc.Encode(g)
+	if err != nil {
+		return err
+	}
+	return enc.Encode(b)
+}
 
-func plot(img *image.NRGBA, v *Visit) {
-	max, min := -1, math.MaxInt64
+func loadVisits() (r, g, b *Visit, err error) {
+	file, err := os.Open("r-g-b.gob")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer file.Close()
+	dec := gob.NewDecoder(file)
+	if err := dec.Decode(&r); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := dec.Decode(&g); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := dec.Decode(&b); err != nil {
+		return nil, nil, nil, err
+	}
+	return r, g, b, nil
+}
+
+func ordered(r, g, b *Visit, incChan chan hit) {
+	bar, _ := barcli.New(4 * (1 / step))
+	for x := -2.0; x <= 2; x += step {
+		for y := -2.0; y <= 2; y += step {
+			orbit(complex(x, y), incChan)
+		}
+		bar.Inc()
+		bar.Print()
+	}
+}
+
+func arbitrary(r, g, b *Visit, incChan chan hit) {
+	bar, _ := barcli.New(100)
+	for i := 0; i < 100; i++ {
+		for j := 0; j < tries; j++ {
+			c := complex(sign()*2*randfloat(), sign()*2*randfloat())
+			orbit(c, incChan)
+		}
+		bar.Inc()
+		bar.Print()
+	}
+}
+
+var p = make([]byte, 1)
+
+func sign() float64 {
+	random.Read(p)
+	r := int(p[0] % 2)
+	if r == 1 {
+		return -1.0
+	}
+	return 1.0
+}
+
+var p1 = make([]byte, 4)
+
+func randfloat() float64 {
+	random.Read(p1)
+	b0, b1, b2, b3 := float64(p1[0]), float64(p1[1]), float64(p1[2]), float64(p1[3])
+	return (1 / 256.0) * (b0 + (1/256.0)*(b1+(1/256.0)*(b2+(1/256.0)*b3)))
+}
+
+var random = randbo.NewFrom(rand.NewSource(time.Now().UnixNano()))
+
+type hit struct {
+	p  image.Point
+	it int
+}
+
+func orbit(c complex128, incChan chan hit) {
+	points := divergencePrim(c)
+	for _, z := range points {
+		p := ptoi(z)
+		// Ignore points outside image.
+		if p.X >= w || p.Y >= h || p.X < 0 || p.Y < 0 {
+			continue
+		}
+		incChan <- hit{p, len(points)}
+	}
+}
+
+func max(v *Visit) (max float64) {
+	max = -1
 	for _, row := range v {
 		for _, v := range row {
 			if v > max {
 				max = v
 			}
-			if v < min && v != 0 {
-				min = v
-			}
 		}
 	}
-	logrus.Println("Vistiations:", max, min)
-	// s := scale(max, min)
-	for y, row := range v {
-		for x, v := range row {
-			if v == 0 {
-				continue
-			}
-			s := scale(v, max, min)
-			plotPoint(PlotPoint{p: image.Pt(x, y), scale: s, v: float64(v)}, img)
+	return max
+}
+
+func GetFunctionName(i interface{}) string {
+	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+}
+
+func plot(pixelChan chan pixel, r, g, b *Visit) {
+	rMax := max(r)
+	gMax := max(g)
+	bMax := max(b)
+	logrus.Println("[i] Visitations:", rMax, gMax, bMax)
+	logrus.Printf("[i] Function: %s, factor: %.2f, overexposure: %.2f", GetFunctionName(f), factor, overexposure)
+	for x, col := range r {
+		for y := range col {
+			c := color.RGBA{
+				uint8(brightness(r[x][y], rMax)),
+				uint8(brightness(g[x][y], gMax)),
+				uint8(brightness(b[x][y], bMax)),
+				255}
+			pixelChan <- pixel{p: image.Point{X: x, Y: y}, c: c}
 		}
 	}
 }
 
-func scale(v, max, min int) float64 {
-	return math.Min((125.0 * float64(v) * (math.Sqrt(float64(v)) / float64(max))), 255.0)
+type pixel struct {
+	p image.Point
+	c color.RGBA
+}
+
+func exp(x float64) float64 {
+	return (1 - math.Exp(-factor*x))
+}
+func log(x float64) float64 {
+	return math.Log1p(factor * x)
+}
+func lin(x float64) float64 {
+	return x
+}
+
+func brightness(v, max float64) float64 {
+	return f(v) * scale(max)
+}
+
+func scale(max float64) float64 {
+	// return float64(v) / float64(max) * 255.0
+	return (255 * overexposure) / f(max)
+	// return (255.0 * math.Sqrt(float64(v))) / math.Sqrt(float64(max))
+	// return math.Min((125.0 * float64(v) * (math.Sqrt(float64(v)) / float64(max))), 255.0)
 }
 
 // Point to index.
@@ -161,88 +298,68 @@ func ptoi(c complex128) (p image.Point) {
 }
 
 // save creates an output image file.
-func save(img *image.NRGBA) (err error) {
+func save(img image.Image) (err error) {
 	out, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
-	img = imaging.Rotate270(img)
-
-	logrus.Println("[!]    Done:", filename)
+	if rotate {
+		img = imaging.Rotate270(img)
+	}
+	logrus.Println("[!] Done:", filename)
 	return jpeg.Encode(out, img, &jpeg.Options{Quality: 100})
 }
 
+// Credits: https://github.com/morcmarc/buddhabrot/blob/master/buddhabrot.go
 func isInBulb(c complex128) bool {
-	x, y := real(c), imag(c)
-	q := (x-1.0/4.0)*(x-1.0/4.0) + y*y
-	return q*(q+(x-1.0/4.0)) < 1.0/4.0*y*y
-}
-
-var points = make([]complex128, iterations)
-
-func divergencePrim(c complex128, incChan chan image.Point) {
-	if isInBulb(c) {
-		return
+	Cr, Ci := real(c), imag(c)
+	// Main cardioid
+	if !(((Cr-0.25)*(Cr-0.25)+(Ci*Ci))*(((Cr-0.25)*(Cr-0.25)+(Ci*Ci))+(Cr-0.25)) < 0.25*Ci*Ci) {
+		// 2nd order period bulb
+		if !((Cr+1.0)*(Cr+1.0)+(Ci*Ci) < 0.0625) {
+			// smaller bulb left of the period-2 bulb
+			if !((((Cr + 1.309) * (Cr + 1.309)) + Ci*Ci) < 0.00345) {
+				// smaller bulb bottom of the main cardioid
+				if !((((Cr + 0.125) * (Cr + 0.125)) + (Ci-0.744)*(Ci-0.744)) < 0.0088) {
+					// smaller bulb top of the main cardioid
+					if !((((Cr + 0.125) * (Cr + 0.125)) + (Ci+0.744)*(Ci+0.744)) < 0.0088) {
+						return false
+					}
+				}
+			}
+		}
 	}
 
+	return true
+}
+
+var points [iterations]complex128
+
+func divergencePrim(c complex128) []complex128 {
+	if isInBulb(c) {
+		return nil
+	}
+
+	var brent complex128
 	z := complex(0, 0)
+	var num int
 	for i := 0; i < iterations; i++ {
 		z = z*z + c
-		// Diverges.
-		if x, y := real(z), imag(z); 4 < x*x+y*y {
-			return
+		// Cycle detection.
+		if (i-1)&i == 0 && i > 1 {
+			brent = z
+		} else if z == brent {
+			return nil
 		}
-		incChan <- ptoi(z)
+		// Diverges.
+		if x, y := real(z), imag(z); x*x+y*y >= bailout {
+			return points[:num]
+		}
+		points[num] = z
+		num++
 	}
-}
-
-// PlotPoint contains a color and a coordinate.
-type PlotPoint struct {
-	smooth color.Color
-	p      image.Point
-	v      float64
-	scale  float64
-}
-
-func plotPoint(p PlotPoint, img *image.NRGBA) {
-	// var r, g, b uint8
-	// if p.v < 500 {
-	// 	r = uint8(p.scale)
-	// } else if p.v < 5000 {
-	// 	g = uint8(p.scale)
-	// } else if p.v <= 20000 {
-	// 	b = uint8(p.scale)
-	// }
-	// c := color.RGBA{r, g, b, 255}
-	c := color.RGBA{uint8(p.scale), uint8(p.scale), uint8(p.scale), 255}
-	// c := colorful.Hsv(p.scale, (p.scale / 360), (p.scale / 360))
-	img.Set(p.p.X, p.p.Y, c)
-}
-
-var random = randbo.NewFrom(rand.NewSource(time.Now().UnixNano()))
-
-// func rpoint(v *Visit) {
-// 	c := complex(sign(random)*2*rand.Float64(), sign(random)*2*rand.Float64())
-// 	point(c, v)
-// }
-
-var p = make([]byte, 1)
-
-func sign(random io.Reader) float64 {
-	random.Read(p)
-	r := int(p[0] % 2)
-	if r == 1 {
-		return -1.0
-	}
-	return 1.0
-}
-
-var p1 = make([]byte, 4)
-
-func randfloat(random io.Reader) float64 {
-	random.Read(p1)
-	b0, b1, b2, b3 := float64(p1[0]), float64(p1[1]), float64(p1[2]), float64(p1[3])
-	return (1 / 256.0) * (b0 + (1/256.0)*(b1+(1/256.0)*(b2+(1/256.0)*b3)))
+	// Converges.
+	return nil
 }
