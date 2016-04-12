@@ -36,12 +36,12 @@ var (
 )
 
 const (
-	w          = 4096
-	h          = 4096
+	w          = 11724
+	h          = 11724
 	iterations = 10000000
 	bailout    = 4
 	step       = 0.001
-	tries      = 100000000
+	tries      = 3000000000
 	// Camera options.
 	offset = 0.4 + 0i
 	zoom   = float64(w) / 2.8
@@ -49,14 +49,14 @@ const (
 
 func itoc(r, g, b *Visit, incChan chan hit) {
 	for h := range incChan {
-		if h.it < 100000 {
+		if h.it < 1000 {
 			continue
 		}
 		p := h.p
 		switch {
-		case h.it%3 == 0 && h.it >= 100000 && h.it <= 120000:
+		case h.it%3 == 0 && h.it >= 1000 && h.it <= 12000:
 			r.Inc(p.X, p.Y)
-		case h.it%5 == 0 && h.it >= 120000 && h.it <= 200000:
+		case h.it%5 == 0 && h.it >= 12000 && h.it <= 200000:
 			g.Inc(p.X, p.Y)
 		case h.it%7 == 0 && h.it >= 180000:
 			b.Inc(p.X, p.Y)
