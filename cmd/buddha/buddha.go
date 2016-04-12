@@ -96,6 +96,7 @@ func init() {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "%s [OPTIONS],,,", os.Args[0])
+	flag.PrintDefaults()
 }
 
 func main() {
