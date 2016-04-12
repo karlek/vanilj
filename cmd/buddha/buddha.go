@@ -48,25 +48,25 @@ const (
 )
 
 func itoc(r, g, b *Visit, incChan chan hit) {
-	for hi := range incChan {
-		if hi.it < 10000 {
+	for h := range incChan {
+		if h.it < 10000 {
 			continue
 		}
-		p := hi.p
+		p := h.p
 		switch {
-		case hi.it%3 == 0 && hi.it >= 10000 && hi.it <= 30000:
-			r[p.X+p.Y*h]++
-		case hi.it%5 == 0 && hi.it >= 30000 && hi.it <= 300000:
-			g[p.X+p.Y*h]++
-		case hi.it%7 == 0 && hi.it >= 300000:
-			b[p.X+p.Y*h]++
+		case h.it%3 == 0 && h.it >= 10000 && h.it <= 30000:
+			r[p.X][p.Y]++
+		case h.it%5 == 0 && h.it >= 30000 && h.it <= 300000:
+			g[p.X][p.Y]++
+		case h.it%7 == 0 && h.it >= 300000:
+			b[p.X][p.Y]++
 		}
 	}
 }
 
 var fun string
 
-type Visit [w * h]float64
+type Visit [w][h]float64
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
@@ -249,9 +249,11 @@ type hit struct {
 
 func max(v *Visit) (max float64) {
 	max = -1
-	for _, v := range v {
-		if v > max {
-			max = v
+	for _, row := range v {
+		for _, v := range row {
+			if v > max {
+				max = v
+			}
 		}
 	}
 	return max
@@ -261,31 +263,26 @@ func GetFunctionName(i interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
-func twodim(n float64) (int, int) {
-	y := math.Floor(n / 4096)
-	x := n - y*4096
-	return int(x), int(y)
-}
-
 func plot(img *image.RGBA, r, g, b *Visit) {
 	rMax := max(r)
 	gMax := max(g)
 	bMax := max(b)
 	logrus.Println("[i] Visitations:", rMax, gMax, bMax)
 	logrus.Printf("[i] Function: %s, factor: %.2f, overexposure: %.2f", GetFunctionName(f), factor, overexposure)
-	for _, n := range r {
-		x, y := twodim(n)
-		if r[x+y*h] == 0 &&
-			g[x+y*h] == 0 &&
-			b[x+y*h] == 0 {
-			continue
+	for x, col := range r {
+		for y := range col {
+			if r[x][y] == 0 &&
+				g[x][y] == 0 &&
+				b[x][y] == 0 {
+				continue
+			}
+			c := color.RGBA{
+				uint8(value(r[x][y], rMax)),
+				uint8(value(g[x][y], gMax)),
+				uint8(value(b[x][y], bMax)),
+				255}
+			img.Set(x, y, c)
 		}
-		c := color.RGBA{
-			uint8(value(r[x+y*h], rMax)),
-			uint8(value(g[x+y*h], gMax)),
-			uint8(value(b[x+y*h], bMax)),
-			255}
-		img.Set(x, y, c)
 	}
 }
 
