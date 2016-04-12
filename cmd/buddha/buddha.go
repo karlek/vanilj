@@ -41,7 +41,7 @@ const (
 	iterations = 10000000
 	bailout    = 4
 	step       = 0.001
-	tries      = 10000000
+	tries      = 100000000
 	// Camera options.
 	offset = 0.4 + 0i
 	zoom   = float64(w) / 2.8
@@ -49,30 +49,46 @@ const (
 
 func itoc(r, g, b *Visit, incChan chan hit) {
 	for h := range incChan {
-		if h.it < 10000 {
+		if h.it < 100000 {
 			continue
 		}
 		p := h.p
 		switch {
-		case h.it%3 == 0 && h.it >= 10000 && h.it <= 30000:
-			r[p.X][p.Y]++
-		case h.it%5 == 0 && h.it >= 30000 && h.it <= 300000:
-			g[p.X][p.Y]++
-		case h.it%7 == 0 && h.it >= 300000:
-			b[p.X][p.Y]++
+		case h.it%3 == 0 && h.it >= 100000 && h.it <= 120000:
+			r.Inc(p.X, p.Y)
+		case h.it%5 == 0 && h.it >= 120000 && h.it <= 200000:
+			g.Inc(p.X, p.Y)
+		case h.it%7 == 0 && h.it >= 180000:
+			b.Inc(p.X, p.Y)
 		}
 	}
 }
 
 var fun string
 
-type Visit [w][h]float64
+type Visit struct {
+	M [w][h]float64
+	l sync.Mutex
+}
+
+func (v *Visit) Lock() {
+	v.l.Lock()
+}
+func (v *Visit) Unlock() {
+	v.l.Unlock()
+}
+
+func (v *Visit) Inc(x, y int) {
+	v.Lock()
+	v.M[x][y]++
+	v.Unlock()
+}
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 	flag.BoolVar(&load, "load", false, "use pre-computed values.")
 	flag.BoolVar(&rotate, "r", false, "rotate the fractal to an upright position.")
-	flag.Float64Var(&overexposure, "o", 3.0, "over exposure")
+	flag.Float64Var(&overexposure, "o", 1.0, "over exposure")
 	flag.Float64Var(&factor, "f", 10.0, "factor")
 	flag.StringVar(&fun, "fun", "exp", "color scaling function")
 	flag.Usage = usage
@@ -125,11 +141,14 @@ func play() (err error) {
 	}
 
 	logrus.Println("[-] Calculating visited points.")
-	incChan := make(chan hit, 100)
-	go itoc(r, g, b, incChan)
+	workers := 4
+	incChan := make(chan hit, 200)
+	for n := 0; n < workers; n++ {
+		go itoc(r, g, b, incChan)
+	}
 	// ordered(r, g, b, incChan)
 	arbitrary(r, g, b, incChan)
-	// close(incChan)
+	close(incChan)
 	logrus.Println("[i] Saving r, g, b channels")
 	if err := gobVisits(r, g, b); err != nil {
 		return err
@@ -190,7 +209,7 @@ func ordered(r, g, b *Visit, incChan chan hit) {
 
 func arbitrary(r, g, b *Visit, incChan chan hit) {
 	// bar, _ := barcli.New(100)
-	workers := 2000
+	workers := 200
 	wg := new(sync.WaitGroup)
 	wg.Add(workers)
 	// for i := 0; i < 100; i++ {
@@ -208,7 +227,6 @@ func arbitrary(r, g, b *Visit, incChan chan hit) {
 	// 	bar.Print()
 	// }
 	wg.Wait()
-	close(incChan)
 }
 
 func orbit(c complex128, incChan chan hit) {
@@ -249,7 +267,7 @@ type hit struct {
 
 func max(v *Visit) (max float64) {
 	max = -1
-	for _, row := range v {
+	for _, row := range v.M {
 		for _, v := range row {
 			if v > max {
 				max = v
@@ -269,17 +287,17 @@ func plot(img *image.RGBA, r, g, b *Visit) {
 	bMax := max(b)
 	logrus.Println("[i] Visitations:", rMax, gMax, bMax)
 	logrus.Printf("[i] Function: %s, factor: %.2f, overexposure: %.2f", GetFunctionName(f), factor, overexposure)
-	for x, col := range r {
+	for x, col := range r.M {
 		for y := range col {
-			if r[x][y] == 0 &&
-				g[x][y] == 0 &&
-				b[x][y] == 0 {
+			if r.M[x][y] == 0 &&
+				g.M[x][y] == 0 &&
+				b.M[x][y] == 0 {
 				continue
 			}
 			c := color.RGBA{
-				uint8(value(r[x][y], rMax)),
-				uint8(value(g[x][y], gMax)),
-				uint8(value(b[x][y], bMax)),
+				uint8(value(r.M[x][y], rMax)),
+				uint8(value(g.M[x][y], gMax)),
+				uint8(value(b.M[x][y], bMax)),
 				255}
 			img.Set(x, y, c)
 		}
