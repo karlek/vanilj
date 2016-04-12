@@ -24,9 +24,9 @@ import (
 
 // Color scaling.
 var (
-	overexposure = 2.0
-	factor       = 50.0
-	f            = log
+	overexposure = 5.0
+	factor       = 5.0
+	f            = exp
 )
 
 const (
@@ -97,10 +97,7 @@ func play() (err error) {
 		if err != nil {
 			return err
 		}
-		pixelChan := make(chan pixel, 4000)
-		go render(img, pixelChan)
-		plot(pixelChan, r, g, b)
-		close(pixelChan)
+		plot(img, r, g, b)
 		return save(img)
 	}
 
@@ -116,17 +113,8 @@ func play() (err error) {
 	}
 
 	logrus.Println("[/] Creating image.")
-	pixelChan := make(chan pixel, 4000)
-	go render(img, pixelChan)
-	plot(pixelChan, r, g, b)
-	close(pixelChan)
+	plot(img, r, g, b)
 	return save(img)
-}
-
-func render(img *image.RGBA, pixelChan chan pixel) {
-	for p := range pixelChan {
-		img.Set(p.p.X, p.p.Y, p.c)
-	}
 }
 
 func gobVisits(r, g, b *Visit) (err error) {
@@ -243,7 +231,7 @@ func GetFunctionName(i interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
-func plot(pixelChan chan pixel, r, g, b *Visit) {
+func plot(img *image.RGBA, r, g, b *Visit) {
 	rMax := max(r)
 	gMax := max(g)
 	bMax := max(b)
@@ -256,7 +244,7 @@ func plot(pixelChan chan pixel, r, g, b *Visit) {
 				uint8(brightness(g[x][y], gMax)),
 				uint8(brightness(b[x][y], bMax)),
 				255}
-			pixelChan <- pixel{p: image.Point{X: x, Y: y}, c: c}
+			img.Set(x, y, c)
 		}
 	}
 }
@@ -272,6 +260,9 @@ func exp(x float64) float64 {
 func log(x float64) float64 {
 	return math.Log1p(factor * x)
 }
+func sqrt(x float64) float64 {
+	return math.Sqrt(factor * x)
+}
 func lin(x float64) float64 {
 	return x
 }
@@ -281,8 +272,8 @@ func brightness(v, max float64) float64 {
 }
 
 func scale(max float64) float64 {
-	// return float64(v) / float64(max) * 255.0
 	return (255 * overexposure) / f(max)
+	// return float64(v) / float64(max) * 255.0
 	// return (255.0 * math.Sqrt(float64(v))) / math.Sqrt(float64(max))
 	// return math.Min((125.0 * float64(v) * (math.Sqrt(float64(v)) / float64(max))), 255.0)
 }
