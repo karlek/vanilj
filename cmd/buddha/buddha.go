@@ -7,9 +7,11 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io"
 	"math"
 	"math/rand"
 	"reflect"
+	"sync"
 	"time"
 
 	"os"
@@ -22,40 +24,51 @@ import (
 	"github.com/karlek/progress/barcli"
 )
 
-// Color scaling.
 var (
-	overexposure = 5.0
-	factor       = 5.0
+	// Color scaling.
+	overexposure = 1.0
+	factor       = 50.0
 	f            = exp
+	// File options.
+	filename = "a.jpg"
+	load     = false
+	rotate   = false
 )
 
 const (
 	w          = 4096
 	h          = 4096
-	iterations = 1000000
+	iterations = 100000
 	bailout    = 4
 	step       = 0.001
-	tries      = 100000
-)
-
-var (
+	tries      = 10000000
 	// Camera options.
 	offset = 0.4 + 0i
 	zoom   = float64(w) / 2.8
-	// File options.
-	load     = false
-	filename = "a.jpg"
-	rotate   = false
 )
 
 func itoc(r, g, b *Visit, incChan chan hit) {
 	for h := range incChan {
+		if h.it < 9000 {
+			continue
+		}
 		p := h.p
-		if h.it >= 10000 && h.it <= 11000 {
+		// logrus.Println(math.Pi/4, math.Sin(float64(h.it)))
+		// a := math.Sin(float64(h.it))
+		// if a >= 0 && a <= math.Phi/4 {
+		// 	r[p.X][p.Y]++
+		// }
+		// if a >= 0 && a <= math.Phi/6 && a >= math.Phi/9 {
+		// 	g[p.X][p.Y]++
+		// }
+		// if a >= 0 && a <= math.Phi/10 {
+		// 	b[p.X][p.Y]++
+		// }
+		if h.it >= 1000 && h.it <= 11000 {
 			r[p.X][p.Y]++
-		} else if h.it >= 50000 && h.it <= 52000 {
+		} else if h.it >= 10000 && h.it <= 52000 {
 			g[p.X][p.Y]++
-		} else if h.it >= 90000 && h.it < 92000 {
+		} else if h.it >= 50000 && h.it < 92000 {
 			b[p.X][p.Y]++
 		}
 	}
@@ -64,7 +77,25 @@ func itoc(r, g, b *Visit, incChan chan hit) {
 type Visit [w][h]float64
 
 func init() {
+	rand.Seed(time.Now().UnixNano())
+	var fun string
 	flag.BoolVar(&load, "load", false, "use pre-computed values.")
+	flag.BoolVar(&rotate, "r", false, "rotate the fractal to an upright position.")
+	flag.Float64Var(&overexposure, "o", 3.0, "over exposure")
+	flag.Float64Var(&factor, "f", 50.0, "factor")
+	flag.StringVar(&fun, "fun", "exp", "color scaling function")
+	switch fun {
+	case "exp":
+		f = exp
+	case "log":
+		f = log
+	case "sqrt":
+		f = sqrt
+	case "lin":
+		f = lin
+	default:
+		logrus.Fatalln("invalid color scaling function:", fun)
+	}
 	flag.Usage = usage
 }
 
@@ -102,11 +133,11 @@ func play() (err error) {
 	}
 
 	logrus.Println("[-] Calculating visited points.")
-	incChan := make(chan hit, 4000)
+	incChan := make(chan hit, 20000)
 	go itoc(r, g, b, incChan)
-	ordered(r, g, b, incChan)
+	// ordered(r, g, b, incChan)
 	arbitrary(r, g, b, incChan)
-	close(incChan)
+	// close(incChan)
 	logrus.Println("[i] Saving r, g, b channels")
 	if err := gobVisits(r, g, b); err != nil {
 		return err
@@ -166,41 +197,26 @@ func ordered(r, g, b *Visit, incChan chan hit) {
 }
 
 func arbitrary(r, g, b *Visit, incChan chan hit) {
-	bar, _ := barcli.New(100)
-	for i := 0; i < 100; i++ {
-		for j := 0; j < tries; j++ {
-			c := complex(sign()*2*randfloat(), sign()*2*randfloat())
-			orbit(c, incChan)
-		}
-		bar.Inc()
-		bar.Print()
+	// bar, _ := barcli.New(100)
+	workers := 2000
+	wg := new(sync.WaitGroup)
+	wg.Add(workers)
+	// for i := 0; i < 100; i++ {
+	for n := 0; n < workers; n++ {
+		go func(incChan chan hit, wg *sync.WaitGroup, iters int) {
+			var random = randbo.NewFrom(rand.NewSource(rand.Int63()))
+			for j := 0; j < iters; j++ {
+				c := complex(sign(random)*2*randfloat(random), sign(random)*2*randfloat(random))
+				orbit(c, incChan)
+			}
+			wg.Done()
+		}(incChan, wg, tries/workers)
 	}
-}
-
-var p = make([]byte, 1)
-
-func sign() float64 {
-	random.Read(p)
-	r := int(p[0] % 2)
-	if r == 1 {
-		return -1.0
-	}
-	return 1.0
-}
-
-var p1 = make([]byte, 4)
-
-func randfloat() float64 {
-	random.Read(p1)
-	b0, b1, b2, b3 := float64(p1[0]), float64(p1[1]), float64(p1[2]), float64(p1[3])
-	return (1 / 256.0) * (b0 + (1/256.0)*(b1+(1/256.0)*(b2+(1/256.0)*b3)))
-}
-
-var random = randbo.NewFrom(rand.NewSource(time.Now().UnixNano()))
-
-type hit struct {
-	p  image.Point
-	it int
+	// 	bar.Inc()
+	// 	bar.Print()
+	// }
+	wg.Wait()
+	close(incChan)
 }
 
 func orbit(c complex128, incChan chan hit) {
@@ -213,6 +229,30 @@ func orbit(c complex128, incChan chan hit) {
 		}
 		incChan <- hit{p, len(points)}
 	}
+}
+
+var p = make([]byte, 1)
+
+func sign(random io.Reader) float64 {
+	random.Read(p)
+	r := int(p[0] % 2)
+	if r == 1 {
+		return -1.0
+	}
+	return 1.0
+}
+
+var p1 = make([]byte, 4)
+
+func randfloat(random io.Reader) float64 {
+	random.Read(p1)
+	b0, b1, b2, b3 := float64(p1[0]), float64(p1[1]), float64(p1[2]), float64(p1[3])
+	return (1 / 256.0) * (b0 + (1/256.0)*(b1+(1/256.0)*(b2+(1/256.0)*b3)))
+}
+
+type hit struct {
+	p  image.Point
+	it int
 }
 
 func max(v *Visit) (max float64) {
@@ -240,9 +280,9 @@ func plot(img *image.RGBA, r, g, b *Visit) {
 	for x, col := range r {
 		for y := range col {
 			c := color.RGBA{
-				uint8(brightness(r[x][y], rMax)),
-				uint8(brightness(g[x][y], gMax)),
-				uint8(brightness(b[x][y], bMax)),
+				uint8(value(r[x][y], rMax)),
+				uint8(value(g[x][y], gMax)),
+				uint8(value(b[x][y], bMax)),
 				255}
 			img.Set(x, y, c)
 		}
@@ -266,16 +306,11 @@ func sqrt(x float64) float64 {
 func lin(x float64) float64 {
 	return x
 }
-
-func brightness(v, max float64) float64 {
+func value(v, max float64) float64 {
 	return f(v) * scale(max)
 }
-
 func scale(max float64) float64 {
 	return (255 * overexposure) / f(max)
-	// return float64(v) / float64(max) * 255.0
-	// return (255.0 * math.Sqrt(float64(v))) / math.Sqrt(float64(max))
-	// return math.Min((125.0 * float64(v) * (math.Sqrt(float64(v)) / float64(max))), 255.0)
 }
 
 // Point to index.
