@@ -1,3 +1,4 @@
+// buddha renders buddhabrot fractals.
 package main
 
 import (
@@ -21,76 +22,70 @@ import (
 	"github.com/disintegration/imaging"
 	"github.com/dustin/randbo"
 	"github.com/karlek/profile"
-	"github.com/karlek/progress/barcli"
 )
 
 var (
 	// Color scaling.
-	overexposure = 1.0
-	factor       = 10.0
-	f            = exp
+	overexposure float64
+	factor       float64
+	f            func(float64) float64
+	fun          string
 	// File options.
-	filename = "a.jpg"
-	load     = false
-	rotate   = false
+	filename string
+	load     bool
+	save     bool
+	rotate   bool
 )
 
 const (
-	w          = 11724
-	h          = 11724
-	iterations = 10000000
+	w          = 4096
+	h          = 4096
+	iterations = 100000000
 	bailout    = 4
-	step       = 0.001
-	tries      = 3000000000
+	tries      = 40000000
 	// Camera options.
 	offset = 0.4 + 0i
 	zoom   = float64(w) / 2.8
 )
 
 func itoc(r, g, b *Visit, incChan chan hit) {
-	for h := range incChan {
-		if h.it < 1000 {
+	for hi := range incChan {
+		if hi.it < 1000 {
 			continue
 		}
-		p := h.p
+		ps := hi.ps
 		switch {
-		case h.it%3 == 0 && h.it >= 1000 && h.it <= 12000:
-			r.Inc(p.X, p.Y)
-		case h.it%5 == 0 && h.it >= 12000 && h.it <= 200000:
-			g.Inc(p.X, p.Y)
-		case h.it%7 == 0 && h.it >= 180000:
-			b.Inc(p.X, p.Y)
+		case hi.it%3 == 0 && hi.it >= 1000 && hi.it <= 12000:
+			for _, p := range ps {
+				r.Inc(p.X, p.Y)
+			}
+		case hi.it%5 == 0 && hi.it >= 12000 && hi.it <= 200000:
+			for _, p := range ps {
+				g.Inc(p.X, p.Y)
+			}
+		case hi.it%7 == 0 && hi.it >= 180000:
+			for _, p := range ps {
+				b.Inc(p.X, p.Y)
+			}
 		}
 	}
 }
 
-var fun string
+type Visit [w][h]float64
 
-type Visit struct {
-	M [w][h]float64
-	l sync.Mutex
-}
-
-func (v *Visit) Lock() {
-	v.l.Lock()
-}
-func (v *Visit) Unlock() {
-	v.l.Unlock()
-}
-
-func (v *Visit) Inc(x, y int) {
-	v.Lock()
-	v.M[x][y]++
-	v.Unlock()
+func (v *Visit) Inc(p image.Point) {
+	v[x][y]++
 }
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 	flag.BoolVar(&load, "load", false, "use pre-computed values.")
+	flag.BoolVar(&save, "save", false, "save orbits.")
 	flag.BoolVar(&rotate, "r", false, "rotate the fractal to an upright position.")
-	flag.Float64Var(&overexposure, "o", 1.0, "over exposure")
+	flag.Float64Var(&overexposure, "oe", 3.0, "over exposure")
 	flag.Float64Var(&factor, "f", 10.0, "factor")
 	flag.StringVar(&fun, "fun", "exp", "color scaling function")
+	flag.StringVar(&filename, "o", "a.jpg", "output filename")
 	flag.Usage = usage
 }
 
@@ -138,26 +133,31 @@ func play() (err error) {
 			return err
 		}
 		plot(img, r, g, b)
-		return save(img)
+		return render(img)
 	}
 
 	logrus.Println("[-] Calculating visited points.")
-	workers := 4
-	incChan := make(chan hit, 200)
+
+	workers := 16
+	wg := new(sync.WaitGroup)
+	wg.Add(workers)
 	for n := 0; n < workers; n++ {
+		incChan := make(chan hit, tries/workers/1000)
 		go itoc(r, g, b, incChan)
+		go arbitrary(tries/workers, incChan, wg)
 	}
-	// ordered(r, g, b, incChan)
-	arbitrary(r, g, b, incChan)
-	close(incChan)
-	logrus.Println("[i] Saving r, g, b channels")
-	if err := gobVisits(r, g, b); err != nil {
-		return err
+	wg.Wait()
+
+	if save {
+		logrus.Println("[i] Saving r, g, b channels")
+		if err := gobVisits(r, g, b); err != nil {
+			return err
+		}
 	}
 
 	logrus.Println("[/] Creating image.")
 	plot(img, r, g, b)
-	return save(img)
+	return render(img)
 }
 
 func gobVisits(r, g, b *Visit) (err error) {
@@ -197,49 +197,41 @@ func loadVisits() (r, g, b *Visit, err error) {
 	return r, g, b, nil
 }
 
-func ordered(r, g, b *Visit, incChan chan hit) {
-	bar, _ := barcli.New(4 * (1 / step))
-	for x := -2.0; x <= 2; x += step {
-		for y := -2.0; y <= 2; y += step {
-			orbit(complex(x, y), incChan)
-		}
-		bar.Inc()
-		bar.Print()
+// func ordered(r, g, b *Visit, incChan chan hit) {
+// 	bar, _ := barcli.New(4 * (1 / step))
+// 	for x := -2.0; x <= 2; x += step {
+// 		for y := -2.0; y <= 2; y += step {
+// 			orbit(complex(x, y), incChan)
+// 		}
+// 		bar.Inc()
+// 		bar.Print()
+// 	}
+// }
+
+func arbitrary(n int, incChan chan hit, wg *sync.WaitGroup) {
+	var random = randbo.NewFrom(rand.NewSource(rand.Int63()))
+	var send [iterations]image.Point
+	for i := 0; i < n; i++ {
+		c := complex(sign(random)*2*randfloat(random), sign(random)*2*randfloat(random))
+		orbit(c, incChan, &send)
 	}
+	wg.Done()
+	close(incChan)
 }
 
-func arbitrary(r, g, b *Visit, incChan chan hit) {
-	// bar, _ := barcli.New(100)
-	workers := 200
-	wg := new(sync.WaitGroup)
-	wg.Add(workers)
-	// for i := 0; i < 100; i++ {
-	for n := 0; n < workers; n++ {
-		go func(incChan chan hit, wg *sync.WaitGroup, iters int) {
-			var random = randbo.NewFrom(rand.NewSource(rand.Int63()))
-			for j := 0; j < iters; j++ {
-				c := complex(sign(random)*2*randfloat(random), sign(random)*2*randfloat(random))
-				orbit(c, incChan)
-			}
-			wg.Done()
-		}(incChan, wg, tries/workers)
-	}
-	// 	bar.Inc()
-	// 	bar.Print()
-	// }
-	wg.Wait()
-}
-
-func orbit(c complex128, incChan chan hit) {
+func orbit(c complex128, incChan chan hit, send *[iterations]image.Point) {
 	points := divergencePrim(c)
+	num := 0
 	for _, z := range points {
 		p := ptoi(z)
 		// Ignore points outside image.
 		if p.X >= w || p.Y >= h || p.X < 0 || p.Y < 0 {
 			continue
 		}
-		incChan <- hit{p, len(points)}
+		send[num] = p
+		num++
 	}
+	incChan <- hit{send[:num], len(points)}
 }
 
 var p = make([]byte, 1)
@@ -262,13 +254,13 @@ func randfloat(random io.Reader) float64 {
 }
 
 type hit struct {
-	p  image.Point
+	ps []image.Point
 	it int
 }
 
 func max(v *Visit) (max float64) {
 	max = -1
-	for _, row := range v.M {
+	for _, row := range v {
 		for _, v := range row {
 			if v > max {
 				max = v
@@ -288,17 +280,17 @@ func plot(img *image.RGBA, r, g, b *Visit) {
 	bMax := max(b)
 	logrus.Println("[i] Visitations:", rMax, gMax, bMax)
 	logrus.Printf("[i] Function: %s, factor: %.2f, overexposure: %.2f", GetFunctionName(f), factor, overexposure)
-	for x, col := range r.M {
+	for x, col := range r {
 		for y := range col {
-			if r.M[x][y] == 0 &&
-				g.M[x][y] == 0 &&
-				b.M[x][y] == 0 {
+			if r[x][y] == 0 &&
+				g[x][y] == 0 &&
+				b[x][y] == 0 {
 				continue
 			}
 			c := color.RGBA{
-				uint8(value(r.M[x][y], rMax)),
-				uint8(value(g.M[x][y], gMax)),
-				uint8(value(b.M[x][y], bMax)),
+				uint8(value(r[x][y], rMax)),
+				uint8(value(g[x][y], gMax)),
+				uint8(value(b[x][y], bMax)),
 				255}
 			img.Set(x, y, c)
 		}
@@ -339,8 +331,8 @@ func ptoi(c complex128) (p image.Point) {
 	return p
 }
 
-// save creates an output image file.
-func save(img image.Image) (err error) {
+// render creates an output image file.
+func render(img image.Image) (err error) {
 	out, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -348,6 +340,7 @@ func save(img image.Image) (err error) {
 	defer out.Close()
 
 	if rotate {
+		logrus.Println("[/] Rotating image")
 		img = imaging.Rotate270(img)
 	}
 	logrus.Println("[!] Done:", filename)
