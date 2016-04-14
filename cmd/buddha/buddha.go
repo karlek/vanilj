@@ -41,7 +41,7 @@ const (
 	w          = 4096
 	h          = 4096
 	iterations = 100000000
-	bailout    = 4
+	bailout    = 100
 	tries      = 40000000
 	// Camera options.
 	offset = 0.4 + 0i
@@ -73,7 +73,7 @@ func itoc(r, g, b *Visit, incChan chan hit) {
 
 type Visit [w][h]float64
 
-func (v *Visit) Inc(p image.Point) {
+func (v *Visit) Inc(x, y int) {
 	v[x][y]++
 }
 
