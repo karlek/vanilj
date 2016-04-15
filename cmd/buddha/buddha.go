@@ -19,15 +19,16 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/disintegration/imaging"
 	"github.com/dustin/randbo"
+
 	"github.com/karlek/profile"
 )
 
 var (
 	// Color scaling.
-	overexposure float64
-	factor       float64
-	f            func(float64) float64
-	fun          string
+	exposure float64
+	factor   float64
+	f        func(float64) float64
+	fun      string
 	// File options.
 	filename string
 	load     bool
@@ -42,11 +43,11 @@ var (
 )
 
 const (
-	w          = 4096
-	h          = 4096
-	iterations = 1000000
+	width      = 4096
+	height     = 4096
+	iterations = 10000000
 	// Camera options.
-	zoom = float64(w) / 2.8
+	zoom = float64(width) / 2.8
 )
 
 func init() {
@@ -54,15 +55,14 @@ func init() {
 	flag.BoolVar(&load, "load", false, "use pre-computed values.")
 	flag.BoolVar(&save, "save", false, "save orbits.")
 	flag.BoolVar(&rotate, "rotate", false, "rotate the fractal to an upright position.")
-	flag.Float64Var(&overexposure, "oe", 1.0, "over exposure")
-	flag.Float64Var(&factor, "f", 1.0, "factor")
-	flag.StringVar(&fun, "fun", "exp", "color scaling function")
-	flag.StringVar(&filename, "o", "a.jpg", "output filename")
-	flag.IntVar(&tries, "t", 12000000, "number of orbits attempts")
-	flag.Float64Var(&bailout, "b", 4, "bailout value")
-	flag.Float64Var(&offsetReal, "r", 0.4, "offsetReal")
-	flag.Float64Var(&offsetImag, "i", 0, "offsetImag")
-
+	flag.Float64Var(&exposure, "exposure", 1.0, "over exposure")
+	flag.Float64Var(&factor, "factor", 1.0, "factor")
+	flag.StringVar(&fun, "function", "exp", "color scaling function")
+	flag.StringVar(&filename, "out", "a.jpeg", "output filename")
+	flag.IntVar(&tries, "tries", 12000000, "number of orbits attempts")
+	flag.Float64Var(&bailout, "bail", 4, "bailout value")
+	flag.Float64Var(&offsetReal, "real", 0.4, "offsetReal")
+	flag.Float64Var(&offsetImag, "imag", 0, "offsetImag")
 	flag.Usage = usage
 }
 
@@ -88,17 +88,18 @@ func main() {
 	}
 	offset = complex(offsetReal, offsetImag)
 
-	if err := play(); err != nil {
+	if err := buddha(); err != nil {
 		logrus.Fatalln(err)
 	}
 }
 
-func initialize() (img *image.RGBA, r, g, b *Visit) {
+// Initialize allocates memory for our image and histograms.
+func initialize() (img *image.RGBA, r, g, b *Histo) {
 	// Output image with black background.
-	return image.NewRGBA(image.Rect(0, 0, w, h)), &Visit{}, &Visit{}, &Visit{}
+	return image.NewRGBA(image.Rect(0, 0, width, height)), &Histo{}, &Histo{}, &Histo{}
 }
 
-func play() (err error) {
+func buddha() (err error) {
 	defer profile.Start(profile.CPUProfile).Stop()
 
 	logrus.Println("[.] Initializing.")
@@ -116,11 +117,11 @@ func play() (err error) {
 
 	logrus.Println("[-] Calculating visited points.")
 
-	workers := 16
+	workers := 32
 	wg := new(sync.WaitGroup)
 	wg.Add(workers)
 	for n := 0; n < workers; n++ {
-		incChan := make(chan hit, tries/workers/1000)
+		incChan := make(chan orbit, tries/workers/1000)
 		go itoc(r, g, b, incChan)
 		go arbitrary(tries/workers, incChan, wg)
 	}
@@ -138,59 +139,49 @@ func play() (err error) {
 	return render(img)
 }
 
-func arbitrary(n int, incChan chan hit, wg *sync.WaitGroup) {
+// arbitrary will try to find orbits from n random complex points.
+func arbitrary(n int, incChan chan orbit, wg *sync.WaitGroup) {
 	var random = randbo.NewFrom(rand.NewSource(rand.Int63()))
 	var send [iterations]image.Point
 	for i := 0; i < n; i++ {
 		c := complex(sign(random)*2*randfloat(random), sign(random)*2*randfloat(random))
-		orbit(c, incChan, &send)
+		findOrbit(c, incChan, &send)
 	}
 	wg.Done()
 	close(incChan)
 }
 
-func orbit(c complex128, incChan chan hit, send *[iterations]image.Point) {
-	points := divergencePrim(c)
+func findOrbit(c complex128, incChan chan orbit, send *[iterations]image.Point) {
+	points := escaped(c)
 	num := 0
 	for _, z := range points {
-		p := ptoi(z)
+		p := ptoc(z)
 		// Ignore points outside image.
-		if p.X >= w || p.Y >= h || p.X < 0 || p.Y < 0 {
+		if p.X >= width || p.Y >= height || p.X < 0 || p.Y < 0 {
 			continue
 		}
 		send[num] = p
 		num++
 	}
-	incChan <- hit{send[:num], len(points)}
+	incChan <- orbit{send[:num], len(points)}
 }
 
-type hit struct {
+// orbit is a collection of points which escaped after an iteration.
+type orbit struct {
 	ps []image.Point
 	it int
 }
 
-func max(v *Visit) (max float64) {
-	max = -1
-	for _, row := range v {
-		for _, v := range row {
-			if v > max {
-				max = v
-			}
-		}
-	}
-	return max
-}
-
-func GetFunctionName(i interface{}) string {
+func getFunctionName(i interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
-func plot(img *image.RGBA, r, g, b *Visit) {
+func plot(img *image.RGBA, r, g, b *Histo) {
 	rMax := max(r)
 	gMax := max(g)
 	bMax := max(b)
 	logrus.Println("[i] Visitations:", rMax, gMax, bMax)
-	logrus.Printf("[i] Function: %s, factor: %.2f, overexposure: %.2f", GetFunctionName(f), factor, overexposure)
+	logrus.Printf("[i] Function: %s, factor: %.2f, exposure: %.2f", getFunctionName(f), factor, exposure)
 	for x, col := range r {
 		for y := range col {
 			if r[x][y] == 0 &&
@@ -224,15 +215,15 @@ func value(v, max float64) float64 {
 	return f(v) * scale(max)
 }
 func scale(max float64) float64 {
-	return (255 * overexposure) / f(max)
+	return (255 * exposure) / f(max)
 }
 
-// Point to index.
-func ptoi(c complex128) (p image.Point) {
+// ptoc converts a point from the complex function to a pixel coordinate.
+func ptoc(c complex128) (p image.Point) {
 	r, i := real(c), imag(c)
 
-	p.X = int(zoom*(r+real(offset))) + w/2
-	p.Y = int(zoom*(i+imag(offset))) + h/2
+	p.X = int(zoom*(r+real(offset))) + width/2
+	p.Y = int(zoom*(i+imag(offset))) + height/2
 
 	return p
 }
@@ -250,10 +241,11 @@ func render(img image.Image) (err error) {
 		img = imaging.Rotate270(img)
 	}
 	logrus.Println("[!] Done:", filename)
-	return jpeg.Encode(out, img, &jpeg.Options{Quality: 100})
+	return jpeg.Encode(out, img, &jpeg.Options{jpeg.DefaultQuality})
 }
 
-func itoc(r, g, b *Visit, incChan chan hit) {
+//
+func itoc(r, g, b *Histo, incChan chan orbit) {
 	for hi := range incChan {
 		if hi.it < 10000 {
 			continue
@@ -276,5 +268,3 @@ func itoc(r, g, b *Visit, incChan chan hit) {
 		}
 	}
 }
-
-type Visit [w][h]float64
