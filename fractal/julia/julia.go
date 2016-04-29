@@ -1,12 +1,21 @@
+// Code partly stolen from Snilsson with love <3
 package julia
 
+import (
+	"image"
+	"image/color"
+	"sync"
+)
+
 func DrawJulia(src image.Image, rgba *image.RGBA, zoom float64, center complex128, iterations float64) {
-	wg := new(sync.WaitGroup)
 	w, h := float64(rgba.Bounds().Size().X), float64(rgba.Bounds().Size().Y)
-	wg.Add(int(w))
+
 	ratio := w / h
 
 	fillMapper(src)
+
+	wg := new(sync.WaitGroup)
+	wg.Add(int(w))
 
 	for x := 0.0; x < w; x++ {
 		// (x-w/2.0) is used to make the x-axis (and also the origo) run through the middle of the screen, horizontally.

@@ -19,6 +19,7 @@ func isInBulb(c complex128) bool {
 // to leave the mandelbrot set and also returns the point last point (which
 // could be outside the mandelbrot set).
 func divergence(c complex128, iterations float64) (i float64, z complex128) {
+	// Ignore points in the main bulbs (the never diverge).
 	if isInBulb(c) {
 		return iterations, c
 	}

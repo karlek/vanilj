@@ -40,8 +40,6 @@ func row(f *fractal.Fractal, y float64) {
 			continue
 		}
 		calc(f, p, int(x), int(y))
-		// mVal, z := divergence(p, f.Iter)
-		// f.Src.Set(int(x), int(y), color.RGBA{255, 255, 255, 255})
 	}
 }
 

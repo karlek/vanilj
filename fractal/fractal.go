@@ -75,3 +75,12 @@ func NewPrettyGradient(iterations float64) Gradient {
 func (g Gradient) DivergenceToColor(escapedIn int) color.Color {
 	return g[escapedIn%len(g)]
 }
+
+func (grad Gradient) Get(i int) (float64, float64, float64) {
+	r, g, b, _ := grad[i].RGBA()
+	return float64(r>>8) / 256, float64(g>>8) / 256, float64(b>>8) / 256
+}
+
+func (g *Gradient) AddColor(c color.Color) {
+	(*g) = append((*g), c)
+}
