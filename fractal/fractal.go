@@ -76,8 +76,51 @@ func (g Gradient) DivergenceToColor(escapedIn int) color.Color {
 	return g[escapedIn%len(g)]
 }
 
-func (grad Gradient) Get(i int) (float64, float64, float64) {
-	r, g, b, _ := grad[i].RGBA()
+const (
+	Modulo int = iota
+	IterationCount
+)
+
+func (g *Gradient) Get(i, it, mode int) (float64, float64, float64) {
+	switch mode {
+	case Modulo:
+		return g.modulo(i)
+	case IterationCount:
+		return g.iteration(i, it)
+	default:
+		return g.modulo(i)
+	}
+}
+
+func (grad *Gradient) modulo(i int) (float64, float64, float64) {
+	if i >= len(*grad) {
+		i %= len(*grad)
+	}
+	r, g, b, _ := (*grad)[i].RGBA()
+	return float64(r>>8) / 256, float64(g>>8) / 256, float64(b>>8) / 256
+}
+
+var Keys = []int{
+	0,
+	0,
+	0,
+}
+
+func (grad *Gradient) iteration(i, it int) (float64, float64, float64) {
+	ranges := []float64{
+		0.05,
+		0.15,
+		0.25,
+	}
+	key := 0
+	for rId := len(ranges) - 1; rId >= 0; rId-- {
+		if float64(i)/float64(it) >= ranges[rId] {
+			key = rId
+			break
+		}
+	}
+	Keys[key] += i
+	r, g, b, _ := (*grad)[key].RGBA()
 	return float64(r>>8) / 256, float64(g>>8) / 256, float64(b>>8) / 256
 }
 
