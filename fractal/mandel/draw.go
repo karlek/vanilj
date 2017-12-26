@@ -49,8 +49,8 @@ func calc(f *fractal.Fractal, p complex128, x, y int) {
 	}
 
 	// Get the speed of divergence.
-	escape, z := divergence(p, f.Iter)
-	f.Src.Set(x, y, smoothColor((escape+1.0-math.Log(math.Log(abs(z)))/math.Log(2))/f.Iter))
+	escape, z := divergence(p, int64(f.Iter))
+	f.Src.Set(x, y, smoothColor((float64(escape)+1.0-math.Log(math.Log(abs(z)))/math.Log(2))/f.Iter))
 }
 
 /// Add credit.
@@ -94,7 +94,7 @@ func rowprim(rgba *image.RGBA, w, h, x, zoom, iterations, pr float64, center com
 		}
 
 		// Get the speed of divergence.
-		mVal, _ := divergence(p, iterations)
+		mVal, _ := divergence(p, int64(iterations))
 		rgba.Set(int(x), int(y), gradient.DivergenceToColor(int(mVal)))
 	}
 	wg.Done()
